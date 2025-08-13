@@ -1,0 +1,19 @@
+name: Integration Tests
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - '.github/workflows/pr-actions.yaml'
+
+jobs:
+  test_pr_publish_comment:
+    if: github.event.pull_request.user.login != 'dependabot[bot]'
+    uses: ./.github/workflows/showcase-dynamic-plugin-install.yaml
+    with:
+      ref: ${{ github.head_ref }}
+      pr_number: ${{ github.event.number }}
+      comment: '/publish'
+    secrets:
+      token: ${{ secrets.GITHUB_TOKEN }}

@@ -116,6 +116,53 @@ jobs:
       packages: write
       id-token: write
 
+  updateTestConfig:
+    name: Update test config with dynamic plugin images from PR
+    needs:
+      - prepare
+      - export
+    if: always() && github.event.comment.body == '/publish' && needs.prepare.outputs.overlay-branch != '' && needs.prepare.outputs.workspace == 'workspaces/acr' && needs.export.outputs.published-exports != ''
+
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Update OCI image reference
+        id: update-test-config
+        uses: actions/github-script@v7
+        env:
+          INPUT_PUBLISHED_EXPORTS: ${{ needs.export.outputs.published-exports }}
+        with:
+          script: |
+            const publishedExports = core.getMultilineInput('published_exports');
+            if (publishedExports.length === 0) {
+              return;
+            }
+            const fs = require('fs');
+            const yaml = require('js-yaml');
+            const configFile = 'workspaces/acr/tests/dynamic-plugins.test.yaml';
+            const doc = yaml.load(fs.readFileSync(configFile, 'utf8'));
+            doc.plugins[0].package = publishedExports[0];
+            fs.writeFileSync(configFile, yaml.dump(doc));
+          result-encoding: string
+          
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          title: Update dynamic plugin test reference for PR ${{ needs.prepare.outputs.pr-number }}
+          body: This PR updates the plugin oci image reference in `workspaces/acr/tests/dynamic-plugins.test.yaml`
+          branch: pr-test-config-update-${{ needs.prepare.outputs.pr-number }}
+          base: ${{ needs.prepare.outputs.overlay-branch }}
+          commit-message: Update dynamic plugin test reference for PR ${{ needs.prepare.outputs.pr-number }}
+          delete-branch: true
+          author: ${{ github.actor }} <${{ github.actor }}@users.noreply.github.com>
+          committer: ${{ github.actor }} <${{ github.actor }}@users.noreply.github.com>
+          repository: ${{ needs.prepare.outputs.overlay-repo }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+    permissions:
+      contents: write
+      pull-requests: write
+
   checkBackstageCompatibility:
     name: Check workspace backstage compatibility
     needs:
