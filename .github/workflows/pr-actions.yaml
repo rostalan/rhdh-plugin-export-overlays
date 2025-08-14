@@ -116,6 +116,23 @@ jobs:
       packages: write
       id-token: write
 
+  updateTestConfig:
+    name: Update Test Config
+    needs:
+      - prepare
+      - export
+
+    if: github.event.comment.body == '/publish' && needs.prepare.outputs.overlay-branch != '' && needs.prepare.outputs.workspace != ''
+    
+    uses: ./.github/workflows/update-test-config.yaml
+    with:
+      workspace: ${{ needs.prepare.outputs.workspace }}
+      pr_number: ${{ needs.prepare.outputs.pr-number }}
+      overlay_branch: ${{ needs.prepare.outputs.overlay-branch }}
+      overlay_repo: ${{ needs.prepare.outputs.overlay-repo }}
+      published_exports: ${{ needs.export.outputs.published-exports }}
+      failed_exports: ${{ needs.export.outputs.failed-exports }}
+
   checkBackstageCompatibility:
     name: Check workspace backstage compatibility
     needs:
@@ -138,6 +155,7 @@ jobs:
       - prepare
       - checkPRUpToDate
       - export
+      - updateTestConfig
       - checkBackstageCompatibility
 
     concurrency:
@@ -171,7 +189,7 @@ jobs:
               filter: 'latest',
             });
             const success = jobs.data.jobs
-              .filter(j => j.name.startsWith('Publish') || j.name.startsWith('export') || j.name.startsWith('Export') || j.name.startsWith('Check'))
+              .filter(j => j.name.startsWith('Publish') || j.name.startsWith('export') || j.name.startsWith('Export') || j.name.startsWith('Check') || j.name.startsWith('Update Test Config'))
               .every(j => j.conclusion === 'success');
 
             await github.rest.repos.createCommitStatus({
