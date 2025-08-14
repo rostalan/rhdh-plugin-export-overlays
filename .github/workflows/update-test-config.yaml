@@ -1,0 +1,115 @@
+name: Update Test Config with OCI References
+
+on:
+  workflow_call:
+    inputs:
+      workspace:
+        description: "The workspace path (e.g., workspaces/acr)"
+        required: true
+        type: string
+      
+      pr_number:
+        description: "PR number for tagging"
+        required: true
+        type: string
+      
+      overlay_branch:
+        description: "Branch to checkout"
+        required: true
+        type: string
+      
+      overlay_repo:
+        description: "Repository to checkout"
+        required: true
+        type: string
+      
+      published_exports:
+        description: "Published OCI exports from export job"
+        required: false
+        type: string
+      
+      failed_exports:
+        description: "Failed exports from export job"
+        required: false
+        type: string
+
+jobs:
+  update-test-config:
+    name: Update Test Config with OCI References
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.overlay_branch }}
+          repository: ${{ inputs.overlay_repo }}
+
+      - name: Capture export data
+        env:
+          PUBLISHED_EXPORTS: ${{ inputs.published_exports }}
+          FAILED_EXPORTS: ${{ inputs.failed_exports }}
+        run: |
+          # Save exports to environment file to handle multiline data properly
+          echo "PUBLISHED_REFS<<EOF" >> $GITHUB_ENV
+          echo "$PUBLISHED_EXPORTS" >> $GITHUB_ENV
+          echo EOF >> $GITHUB_ENV
+          
+          echo "Export data captured in environment:"
+          echo "$PUBLISHED_EXPORTS"
+
+      - name: Update test config with real OCI references
+        env:
+          WORKSPACE: ${{ inputs.workspace }}
+        run: |
+          echo "Updating test config for workspace: $WORKSPACE"
+          
+          CONFIG_FILE="${WORKSPACE}/tests/dynamic-plugins.test.yaml"
+          
+          if [ ! -f "$CONFIG_FILE" ]; then
+            echo "No test config file found at $CONFIG_FILE, skipping"
+            exit 0
+          fi
+          
+          # Use published OCI references from environment
+          if [ -z "$PUBLISHED_REFS" ]; then
+            echo "No published OCI references found in environment, skipping update"
+            exit 0
+          fi
+          
+          echo "Found published OCI references:"
+          echo "$PUBLISHED_REFS"
+          echo ""
+          
+          # Create temporary file for updates
+          cp "$CONFIG_FILE" "${CONFIG_FILE}.tmp"
+          
+          # For each OCI reference, find and replace matching package line
+          while IFS= read -r oci_ref; do
+            [ -z "$oci_ref" ] && continue
+            
+            # Extract plugin name from OCI reference (e.g., "backstage-community-plugin-kiali")
+            PLUGIN_NAME=$(echo "$oci_ref" | sed -n 's|.*/\(backstage-community-plugin-[^:]*\):.*|\1|p')
+            
+            if [ -n "$PLUGIN_NAME" ]; then
+              NEW_PACKAGE="oci://$oci_ref"
+              echo "$PLUGIN_NAME -> $NEW_PACKAGE"
+              
+              # Replace any package line with this plugin name
+              sed -i "s|package: oci://[^/]*/${PLUGIN_NAME}:[^[:space:]]*|package: ${NEW_PACKAGE}|g" "${CONFIG_FILE}.tmp"
+            fi
+            
+          done <<< "$PUBLISHED_REFS"
+          
+          mv "${CONFIG_FILE}.tmp" "$CONFIG_FILE"
+          echo ""
+          echo "Updated configuration:"
+          grep "package: oci://" "$CONFIG_FILE"
+
+      - name: Commit and push changes
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add -A
+          git diff --staged --quiet || git commit -m "Update test config with PR OCI references"
+          git push
