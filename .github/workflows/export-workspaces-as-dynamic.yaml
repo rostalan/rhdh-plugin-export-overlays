@@ -58,7 +58,21 @@ on:
         description: Optional commit ID of the last successful publishing of plugin container images
         type: string
         required: false
-  
+
+    outputs:
+      published-exports:
+        description: "List of successfully published dynamic plugin container images"
+        value: ${{ jobs.export.outputs.published-exports }}
+      failed-exports:
+        description: "List of plugins that failed during export or image push"
+        value: ${{ jobs.export.outputs.failed-exports }}
+      published-exports-b64:
+        description: "Base64 of published-exports to avoid masking"
+        value: ${{ jobs.encode.outputs.published-exports-b64 }}
+      failed-exports-b64:
+        description: "Base64 of failed-exports to avoid masking"
+        value: ${{ jobs.encode.outputs.failed-exports-b64 }}
+
   workflow_dispatch:
     inputs:
       node-version:
@@ -117,7 +131,8 @@ concurrency:
 
 jobs:
   export:
-    uses: redhat-developer/rhdh-plugin-export-utils/.github/workflows/export-workspaces-as-dynamic.yaml@main
+    uses: redhat-developer/rhdh-plugin-export-utils/.github/workflows/export-workspaces-as-dynamic.yaml@main 
+    # https://github.com/redhat-developer/rhdh-plugin-export-utils/blob/main/.github/workflows/export-workspaces-as-dynamic.yaml
     with:
       node-version: ${{ inputs.node-version }}
       janus-cli-version: ${{ inputs.janus-cli-version }}
@@ -137,3 +152,62 @@ jobs:
       attestations: write
       packages: write
       id-token: write
+
+  encode:
+    needs: export
+    runs-on: ubuntu-latest
+    outputs:
+      published-exports-b64: ${{ steps.set.outputs.published_b64 }}
+      failed-exports-b64:    ${{ steps.set.outputs.failed_b64 }}
+    steps:
+      - name: Encode refs to base64
+        id: set
+        shell: bash
+        run: |
+          echo "::group::Collect export outputs"
+          pub='${{ needs.export.outputs.published-exports }}'
+          fail='${{ needs.export.outputs.failed-exports }}'
+          pub_lines=$(printf '%s' "$pub" | sed '/^$/d' | wc -l | tr -d ' ')
+          fail_lines=$(printf '%s' "$fail" | sed '/^$/d' | wc -l | tr -d ' ')
+          echo "published-exports non-empty lines: $pub_lines"
+          echo "failed-exports    non-empty lines: $fail_lines"
+          echo "::endgroup::"
+
+          pub_b64=$(printf '%s' "$pub" | base64 -w0)
+          fail_b64=$(printf '%s' "$fail" | base64 -w0)
+
+          echo "published_b64=$pub_b64" >> "$GITHUB_OUTPUT"
+          echo "failed_b64=$fail_b64" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "Export refs summary:";
+            echo "- published lines: $pub_lines";
+            echo "- failed lines:    $fail_lines";
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  upload-refs-artifact:
+    needs: export
+    runs-on: ubuntu-latest
+    steps:
+      - name: Write refs files
+        shell: bash
+        run: |
+          mkdir -p refs
+          printf '%s\n' '${{ needs.export.outputs.published-exports }}' > refs/published.txt
+          printf '%s\n' '${{ needs.export.outputs.failed-exports }}' > refs/failed.txt
+          echo "::group::Refs files overview"
+          wc -l refs/* || true
+          echo "::endgroup::"
+      - name: Upload refs artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: export-refs
+          path: refs
+        # add a brief note for the job summary
+      - name: Summarize refs artifact
+        if: always()
+        run: |
+          {
+            echo "Export refs artifact uploaded:";
+            echo "- files: refs/published.txt, refs/failed.txt";
+          } >> "$GITHUB_STEP_SUMMARY"

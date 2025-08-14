@@ -116,22 +116,60 @@ jobs:
       packages: write
       id-token: write
 
-  updateTestConfig:
-    name: Update Test Config
-    needs:
-      - prepare
-      - export
+  prepare-test-config:
+    name: Prepare dynamic-plugins.test.yaml
+    needs: export
+    if: needs.export.outputs.published-exports != ''   # skip when nothing built
+    runs-on: ubuntu-latest
 
-    if: github.event.comment.body == '/publish' && needs.prepare.outputs.overlay-branch != '' && needs.prepare.outputs.workspace != ''
-    
-    uses: ./.github/workflows/update-test-config.yaml
-    with:
-      workspace: ${{ needs.prepare.outputs.workspace }}
-      pr_number: ${{ needs.prepare.outputs.pr-number }}
-      overlay_branch: ${{ needs.prepare.outputs.overlay-branch }}
-      overlay_repo: ${{ needs.prepare.outputs.overlay-repo }}
-      published_exports: ${{ needs.export.outputs.published-exports }}
-      failed_exports: ${{ needs.export.outputs.failed-exports }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref:  ${{ needs.prepare.outputs.overlay-branch }}
+          repository: ${{ needs.prepare.outputs.overlay-repo }}
+
+      - name: Generate test config
+        env:
+          PUBLISHED_EXPORTS_B64: ${{ needs.export.outputs.published-exports-b64 }}
+          WORKSPACE:         ${{ needs.prepare.outputs.workspace }}
+        run: |
+          cfg="$WORKSPACE/tests/dynamic-plugins.test.yaml"
+          cp "$cfg" dynamic-plugins.test.yaml
+          PUBLISHED_EXPORTS=$(printf '%s' "$PUBLISHED_EXPORTS_B64" | base64 -d || true)
+          echo "::group::Refs to inject"
+          echo "$PUBLISHED_EXPORTS"
+          echo "::endgroup::"
+          while IFS= read -r ref; do
+            [ -z "$ref" ] && continue
+            name=$(echo "$ref" | sed -n 's|.*/\(backstage-community-plugin-[^:]*\):.*|\1|p')
+            sed -i "s|package: .*${name}:.*|package: oci://$ref|g" dynamic-plugins.test.yaml
+          done <<< "$PUBLISHED_EXPORTS"
+
+          echo "::group::dynamic-plugins.test.yaml (head)"
+          head -n 20 dynamic-plugins.test.yaml || true
+          echo "::endgroup::"
+
+          {
+            echo "Prepared dynamic-plugins.test.yaml for tests.";
+            echo "- workspace: $WORKSPACE";
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload artifact for tests
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-test-config
+          path: dynamic-plugins.test.yaml # this can be expanded and can contain multiple merged config files 
+
+      - name: Print unmasked artifact URL (temporary) # TODO: remove this before merging
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FORCED_OWNER: rostalan
+        run: |
+          run_id="${{ github.run_id }}"
+          repo_full="${{ github.repository }}"
+          repo_name="${repo_full#*/}"
+          artifact_id=$(gh api "/repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts" | jq -r '.artifacts[] | select(.name=="pr-test-config") | .id' | head -n1)
+          echo "Artifact (forced owner) URL: https://github.com/${FORCED_OWNER}/${repo_name}/actions/runs/${run_id}/artifacts/${artifact_id}"
 
   checkBackstageCompatibility:
     name: Check workspace backstage compatibility
@@ -155,7 +193,6 @@ jobs:
       - prepare
       - checkPRUpToDate
       - export
-      - updateTestConfig
       - checkBackstageCompatibility
 
     concurrency:
@@ -189,7 +226,7 @@ jobs:
               filter: 'latest',
             });
             const success = jobs.data.jobs
-              .filter(j => j.name.startsWith('Publish') || j.name.startsWith('export') || j.name.startsWith('Export') || j.name.startsWith('Check') || j.name.startsWith('Update Test Config'))
+              .filter(j => j.name.startsWith('Publish') || j.name.startsWith('export') || j.name.startsWith('Export') || j.name.startsWith('Check')
               .every(j => j.conclusion === 'success');
 
             await github.rest.repos.createCommitStatus({
@@ -217,6 +254,7 @@ jobs:
                 body = `${body}\n  - ${line}`;
               });
             }
+            core.summary.addRaw(`Publish workflow result: ${ success ? 'success' : 'failure' }`) .write();
             await github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,

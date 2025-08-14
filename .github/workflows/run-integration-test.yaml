@@ -1,0 +1,74 @@
+
+name: Run integration tests on plugin images
+# for now only check the artifact is uploaded
+on:
+  workflow_run:
+    workflows: ["Pull Request Actions"]   # pr-actions.yaml’s `name`
+    types: [completed]
+
+jobs:
+  check-artifact:
+    runs-on: ubuntu-latest
+    outputs:
+      exists: ${{ steps.chk.outputs.exists }}
+    steps:
+      - name: Check artifact existence
+        id: chk
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          echo "::group::Listing artifacts for run ${{ github.event.workflow_run.id }}"
+          gh api "/repos/${{ github.repository }}/actions/runs/${{ github.event.workflow_run.id }}/artifacts" | jq -r '.artifacts[].name'
+          echo "::endgroup::"
+          if gh api "/repos/${{ github.repository }}/actions/runs/${{ github.event.workflow_run.id }}/artifacts" \
+               | jq -e '.artifacts[] | select(.name == "pr-test-config")' > /dev/null; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Artifact 'pr-test-config' found."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "Artifact 'pr-test-config' not found."
+          fi
+
+  integration-tests:
+    needs: check-artifact
+    if: needs.check-artifact.outputs.exists == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download test config
+        uses: actions/download-artifact@v4
+        with:
+          name: pr-test-config
+          run-id: ${{ github.event.workflow_run.id }}
+
+      - name: Download export refs (if present)
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: export-refs
+          run-id: ${{ github.event.workflow_run.id }}
+
+      - name: Show downloaded test config snippet
+        run: |
+          echo "::group::Downloaded files"
+          ls -al
+          echo "::endgroup::"
+          echo "::group::dynamic-plugins.test.yaml (head)"
+          head -n 20 dynamic-plugins.test.yaml || true
+          echo "::endgroup::"
+          if [ -f refs/published.txt ]; then
+            echo "::group::refs/published.txt (head)"
+            head -n 20 refs/published.txt
+            echo "::endgroup::"
+          fi
+          {
+            echo "Integration input summary:";
+            test -f dynamic-plugins.test.yaml && echo "- dynamic-plugins.test.yaml present" || echo "- dynamic-plugins.test.yaml missing";
+            test -f refs/published.txt && echo "- refs/published.txt present" || echo "- refs/published.txt missing";
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # ── deploy RHDH and run assertions ─────────────────────────
+      # - name: Spin up RHDH with plugins
+      #   run: ./scripts/deploy-rhdh.sh dynamic-plugins.test.yaml
+      # - name: Verify plugin load
+      #   run: ./scripts/check-logs.sh
