@@ -128,7 +128,7 @@ jobs:
       workspace-path: ${{ inputs.workspace-path }}
       publish-container: ${{ inputs.publish-container }}
       image-repository-prefix: ${{ inputs.image-repository-prefix }}
-      image-registry-user: ${{ secrets.image-registry-user || github.actor }}
+      image-registry-user: ${{ inputs.image-registry-user || github.actor }}
       
     secrets:
       image-registry-password: ${{ secrets.image-registry-password || secrets.GITHUB_TOKEN }}
