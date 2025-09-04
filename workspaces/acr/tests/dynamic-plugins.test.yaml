@@ -1,5 +1,5 @@
 plugins:
-  - package: oci://ghcr.io/redhat-developer/rhdh-plugin-export-overlays/backstage-community-plugin-acr:bs_1.39.1__1.15.2!backstage-community-plugin-acr
+  - package: oci://ghcr.io/rostalan/rhdh-plugin-export-overlays/backstage-community-plugin-acr:pr_60__1.15.2!backstage-community-plugin-acr
     config:
       proxy:
         '/acr/api':
