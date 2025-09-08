@@ -64,7 +64,11 @@ jobs:
     needs:
       - check
     runs-on: ubuntu-latest
+<<<<<<< HEAD
     if: always() && github.ref == 'refs/heads/main'
+=======
+    if: always()
+>>>>>>> 4c2f1b2 (chore(tests): added integration tests)
     steps:      
       - name: Checkout metadata branch
         uses: actions/checkout@v4
@@ -110,6 +114,7 @@ jobs:
 
     permissions:
       contents: write
+<<<<<<< HEAD
 
   update-wiki:
     needs:
@@ -195,3 +200,5 @@ jobs:
 
     permissions:
       contents: write
+=======
+>>>>>>> 4c2f1b2 (chore(tests): added integration tests)
