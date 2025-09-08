@@ -61,6 +61,21 @@ jobs:
           OUT_FILE="$OUT_DIR/dynamic-plugins.test.yaml"
           mkdir -p "$OUT_DIR"
 
+          # Always include the root-level default config
+          ROOT_CONFIG="$GITHUB_WORKSPACE/tests/app-config.yaml"
+          if [ -f "$ROOT_CONFIG" ]; then
+            echo "Copying root app-config.yaml into artifact"
+            cp "$ROOT_CONFIG" "$OUT_DIR/app-config.yaml"
+          else
+            echo "Root-level tests/app-config.yaml not found at $ROOT_CONFIG"
+          fi
+
+          # copy optional workspace-level test configs into artefact
+          [ -f "$WORKSPACE_PATH/tests/app-config.test.yaml" ] && cp "$WORKSPACE_PATH/tests/app-config.test.yaml" "$OUT_DIR/"
+          [ -f "$WORKSPACE_PATH/tests/test.env" ] && cp "$WORKSPACE_PATH/tests/test.env" "$OUT_DIR/"
+
+          echo "Contents of $OUT_DIR after copy:" && ls -la "$OUT_DIR"
+
           # Install yq for YAML processing
           sudo curl -sL https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -o /usr/local/bin/yq
           sudo chmod +x /usr/local/bin/yq
@@ -95,7 +110,8 @@ jobs:
                 continue
               fi
 
-              echo "- package: \"oci://ghcr.io/${IMAGE_PATH_AND_PLUGIN}:${NEW_TAG}!${PACKAGE_NAME}\"" >> "$OUT_FILE"
+              STRIPPED=$(echo "$PACKAGE_NAME" | sed 's|^@||; s|/|-|')
+              echo "- package: \"oci://ghcr.io/${IMAGE_PATH_AND_PLUGIN}:${NEW_TAG}!${STRIPPED}\"" >> "$OUT_FILE"
               echo "  disabled: false" >> "$OUT_FILE"
               echo "  pluginConfig:" >> "$OUT_FILE"
               echo "    dynamicPlugins:" >> "$OUT_FILE"
@@ -106,9 +122,9 @@ jobs:
             fi
           done
 
-      - name: Upload the config as workflow artifact
+      - name: Upload integration-test artefact
         uses: actions/upload-artifact@v4
         with:
-          name: dynamic-plugins-test
-          path: ${{ format('{0}/tests/dynamic-plugins.test.yaml', inputs.workspace-path) }}
-          if-no-files-found: ignore
+          name: integration-test-artifacts
+          path: ${{ format('{0}/tests', inputs.workspace-path) }}
+          if-no-files-found: error
