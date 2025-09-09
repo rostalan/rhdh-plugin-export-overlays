@@ -39,7 +39,11 @@ jobs:
             exit 0
           fi
 
+<<<<<<< HEAD
           # For each published export, extract plugin name and tag, then update matching line in config
+=======
+          # For each published export, extract repo path, plugin name and tag, then update matching line in config
+>>>>>>> 7cf8813 (chore(tests): added rhdh deployment)
           # Expected export format: ghcr.io/<repo_path>/<plugin_name>:<tag>
           for export in $PUBLISHED_EXPORTS; do
             echo "Processing export: $export"
@@ -50,8 +54,14 @@ jobs:
 
               # Only update if an exact line for this plugin exists
               if grep -q -E "package:\s*oci://ghcr\\.io/.*/${PLUGIN_NAME}:[^!]+!${PLUGIN_NAME}\s*$" "$CONFIG_FILE"; then
+<<<<<<< HEAD
                 sed -i -E "s|(package:\s*oci://ghcr\\.io/.*/${PLUGIN_NAME}:)[^!]+(!${PLUGIN_NAME})(\s*$)|\\1${NEW_TAG}\\2\\3|" "$CONFIG_FILE"
                 echo "Updated '${PLUGIN_NAME}' to tag '${NEW_TAG}'"
+=======
+                # Replace the full image path and tag while preserving !<plugin_name>
+                sed -i -E "s|package:\s*oci://ghcr\\.io/.*/${PLUGIN_NAME}:[^!]+!${PLUGIN_NAME}\s*$|package: oci://ghcr.io/${IMAGE_PATH_AND_PLUGIN}:${NEW_TAG}!${PLUGIN_NAME}|" "$CONFIG_FILE"
+                echo "Updated '${PLUGIN_NAME}' to ghcr.io/${IMAGE_PATH_AND_PLUGIN}:${NEW_TAG}"
+>>>>>>> 7cf8813 (chore(tests): added rhdh deployment)
               else
                 echo "No matching line for plugin '${PLUGIN_NAME}', skipped"
               fi
@@ -60,11 +70,41 @@ jobs:
             fi
           done
 
+<<<<<<< HEAD
       - name: Upload the config as workflow artifact
         uses: actions/upload-artifact@v4
         with:
           name: dynamic-plugins-test
           path: ${{ format('{0}/tests/dynamic-plugins.test.yaml', inputs.workspace-path) }}
+=======
+      - name: Prepare artifacts for integration tests
+        run: |
+          mkdir -p ./integration-artifacts
+          
+          # Copy dynamic-plugins test config
+          if [ -f "${{ format('{0}/tests/dynamic-plugins.test.yaml', inputs.workspace-path) }}" ]; then
+            cp "${{ format('{0}/tests/dynamic-plugins.test.yaml', inputs.workspace-path) }}" ./integration-artifacts/dynamic-plugins.test.yaml
+          fi
+          
+          # Copy root app-config.yaml if present
+          if [ -f "workspaces/tests/app-config.yaml" ]; then
+            cp "workspaces/tests/app-config.yaml" ./integration-artifacts/app-config.yaml
+          fi
+          
+          # Copy workspace app-config.test.yaml if present
+          if [ -f "${{ format('{0}/tests/app-config.test.yaml', inputs.workspace-path) }}" ]; then
+            cp "${{ format('{0}/tests/app-config.test.yaml', inputs.workspace-path) }}" ./integration-artifacts/app-config.test.yaml
+          fi
+          
+          echo "Prepared artifacts:"
+          ls -la ./integration-artifacts/ || true
+
+      - name: Upload integration test artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-test-artifacts
+          path: ./integration-artifacts
+>>>>>>> 7cf8813 (chore(tests): added rhdh deployment)
           if-no-files-found: ignore
 
 
