@@ -67,4 +67,18 @@ jobs:
           path: ${{ format('{0}/tests/dynamic-plugins.test.yaml', inputs.workspace-path) }}
           if-no-files-found: ignore
 
+      - name: Upload root app-config.yaml if present
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-config-root
+          path: workspaces/tests/app-config.yaml
+          if-no-files-found: ignore
+
+      - name: Upload workspace app-config.test.yaml if present
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-config-workspace
+          path: ${{ format('{0}/tests/app-config.test.yaml', inputs.workspace-path) }}
+          if-no-files-found: ignore
+
 

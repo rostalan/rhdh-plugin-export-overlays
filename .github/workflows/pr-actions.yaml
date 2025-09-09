@@ -202,6 +202,16 @@ jobs:
       workspace-path: ${{ needs.prepare.outputs.workspace }}
       published-exports: ${{ needs.export.outputs.published-exports }}
 
+  runIntegrationTests:
+    name: Run Plugin Integration Tests
+    needs:
+      - prepare
+      - updateTestConfig
+    if: needs.prepare.outputs.workspace != ''
+    uses: ./.github/workflows/run-plugin-integration-tests.yaml
+    with:
+      workspace-path: ${{ needs.prepare.outputs.workspace }}
+
   checkBackstageCompatibility:
     name: Check workspace backstage compatibility
     needs:
@@ -227,6 +237,7 @@ jobs:
       - checkPRUpToDate
       - export
       - updateTestConfig
+      - runIntegrationTests
       - checkBackstageCompatibility
 
     concurrency:
@@ -261,7 +272,7 @@ jobs:
               filter: 'latest',
             });
             const success = jobs.data.jobs
-              .filter(j => j.name.startsWith('Publish') || j.name.startsWith('export') || j.name.startsWith('Export') || j.name.startsWith('Check') || j.name.startsWith('Update Test Config'))
+              .filter(j => j.name.startsWith('Publish') || j.name.startsWith('export') || j.name.startsWith('Export') || j.name.startsWith('Check') || j.name.startsWith('Update Test Config') || j.name.startsWith('Run Plugin Integration Tests'))
               .every(j => j.conclusion === 'success');
 
             await github.rest.repos.createCommitStatus({
