@@ -6,6 +6,13 @@ on:
       workspace-path:
         required: true
         type: string
+    outputs:
+      success:
+        description: Overall integration test result
+        value: ${{ jobs.run.outputs.success }}
+      failed-plugins:
+        description: Newline-separated list of plugins that failed to load
+        value: ${{ jobs.run.outputs.failed-plugins }}
 
 jobs:
   run:
@@ -14,6 +21,9 @@ jobs:
     permissions:
       contents: read
       packages: read
+    outputs:
+      success: ${{ steps.collect-results.outputs.success }}
+      failed-plugins: ${{ steps.collect-results.outputs.failed-plugins }}
     steps:
       - name: Download integration test artifacts
         uses: actions/download-artifact@v4
@@ -106,27 +116,52 @@ jobs:
           curl -fsS http://localhost:7007/health
 
       - name: Verify plugin loading
+        id: collect-results
         run: |
           set -e
           PLUGINS=$(grep -Eo '!([^[:space:]]+)' ./artifacts/dynamic-plugins.test.yaml | sed 's/^!//' | sort -u)
           if [ -z "$PLUGINS" ]; then
-            echo "No plugins found in dynamic-plugins.test.yaml"; exit 1
+            echo "No plugins found in dynamic-plugins.test.yaml"
+            echo "success=false" >> "$GITHUB_OUTPUT"
+            echo "failed-plugins<<EOF" >> "$GITHUB_OUTPUT"
+            echo "(no-plugins)" >> "$GITHUB_OUTPUT"
+            echo "EOF" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
           LOGS=$(docker logs rhdh || true)
-          # Check each plugin appears as loaded in logs
+          failures=()
           echo "===== Checking logs for plugin loaded messages"
           for plugin in $PLUGINS; do
             echo "Asserting plugin loaded: $plugin"
             if echo "$LOGS" | grep -qi "loaded dynamic .* plugin" && echo "$LOGS" | grep -q "/dynamic-plugins-root/${plugin}"; then
-              echo "Plugin loaded
+              echo "Plugin loaded: $plugin"
             else
-              echo "Plugin NOT loaded"; exit 1
+              echo "Plugin NOT loaded: $plugin"
+              failures+=("$plugin")
             fi
           done
-          # Ensure no obvious loading errors are present
           if echo "$LOGS" | grep -E "(InstallException|Error while adding OCI plugin|Failed to load dynamic plugin|dynamic plugin.*error)" >/dev/null; then
-            echo "Detected dynamic plugin loading errors in logs"; exit 1
+            echo "Detected dynamic plugin loading errors in logs"
+            failures+=("(log-errors)")
           fi
+          if [ ${#failures[@]} -eq 0 ]; then
+            echo "success=true" >> "$GITHUB_OUTPUT"
+            echo "failed-plugins<<EOF" >> "$GITHUB_OUTPUT"
+            echo "" >> "$GITHUB_OUTPUT"
+            echo "EOF" >> "$GITHUB_OUTPUT"
+          else
+            echo "success=false" >> "$GITHUB_OUTPUT"
+            echo "failed-plugins<<EOF" >> "$GITHUB_OUTPUT"
+            printf "%s\n" "${failures[@]}" >> "$GITHUB_OUTPUT"
+            echo "EOF" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Fail if any plugin failed to load
+        if: ${{ steps.collect-results.outputs.success != 'true' }}
+        run: |
+          echo "One or more plugins failed to load:"
+          echo "${{ steps.collect-results.outputs.failed-plugins }}"
+          exit 1
 
       - name: Container logs
         if: always()
