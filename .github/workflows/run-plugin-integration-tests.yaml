@@ -57,7 +57,6 @@ jobs:
           echo "Using docker auth file: $HOME/.docker/config.json"
           DOCKER_CMD="$DOCKER_CMD -v $HOME/.docker/config.json:/root/.docker/config.json:ro"
           DOCKER_CMD="$DOCKER_CMD -e REGISTRY_AUTH_FILE=/root/.docker/config.json"
-          DOCKER_CMD="$DOCKER_CMD -e SKIP_INTEGRITY_CHECK=true"
           
           # Add image and command
           DOCKER_CMD="$DOCKER_CMD --entrypoint /bin/bash quay.io/rhdh-community/rhdh:1.6 -c '"
