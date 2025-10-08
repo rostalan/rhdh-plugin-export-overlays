@@ -1,0 +1,16 @@
+packageName: "@red-hat-developer-hub/backstage-plugin-adoption-insights-backend"
+support: tech-preview
+lifecycle: active
+configs:
+  default:
+    app:
+      analytics:
+        adoptionInsights:
+          maxBufferSize: 20
+          flushInterval: 5000
+          debug: false
+          licensedUsers: 100
+  additional:
+    - title: some title
+      content:
+        ...  

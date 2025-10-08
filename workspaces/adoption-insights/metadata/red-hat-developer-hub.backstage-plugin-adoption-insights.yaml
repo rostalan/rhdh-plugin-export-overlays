@@ -1,0 +1,25 @@
+packageName: "@red-hat-developer-hub/backstage-plugin-adoption-insights"
+support: tech-preview
+lifecycle: active
+configs:
+  default:
+    dynamicPlugins:
+      frontend:
+        red-hat-developer-hub.backstage-plugin-adoption-insights:
+          appIcons:
+            - name: adoptionInsightsIcon
+              importName: AdoptionInsightsIcon
+          dynamicRoutes:
+            - path: /adoption-insights
+              importName: AdoptionInsightsPage
+              menuItem:
+                icon: adoptionInsightsIcon
+                text: Adoption Insights
+          menuItems:
+            adoption-insights:
+              parent: admin
+          icon: adoptionInsightsIcon
+  additional:
+    - title: some title
+      content:
+        ...  

@@ -1,0 +1,15 @@
+packageName: "@red-hat-developer-hub/backstage-plugin-analytics-module-adoption-insights"
+support: tech-preview
+lifecycle: active
+configs:
+  default:
+    dynamicPlugins:
+      frontend:
+        red-hat-developer-hub.backstage-plugin-analytics-module-adoption-insights:
+          analyticsApiExtensions:
+            - importName: AdoptionInsightsAnalyticsApi
+
+  additional:
+    - title: some title
+      content:
+        ...  
