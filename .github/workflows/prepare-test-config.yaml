@@ -12,6 +12,9 @@ on:
       workspace-path:
         required: true
         type: string
+      published-exports:
+        required: false
+        type: string
     outputs:
       plugins_metadata_complete:
         description: "True if metadata exists for all referenced plugins"
@@ -25,43 +28,25 @@ jobs:
     steps:
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.3.0
         with:
           ref: ${{ inputs.overlay-branch }}
           repository: ${{ inputs.overlay-repo }}
 
-      - name: Download last published-exports artifact
-        uses: dawidd6/action-download-artifact@v6
-        with:
-          workflow: pr-actions.yaml
-          name: published-exports
-          workflow_conclusion: success
-          workflow_search: true
-          search_artifacts: true
-          check_artifacts: true
-          if_no_artifact_found: warn
-          allow_forks: true
-
       - name: Setup yq
-        uses: mikefarah/yq@v4
+        uses: mikefarah/yq@v4.44.2
 
       - name: Build dynamic-plugins.test.yaml
         id: build-dynamic-plugins
         run: |
           WORKSPACE_PATH="${{ inputs.workspace-path }}"
-          PUBLISHED_EXPORTS=""
+          PUBLISHED_EXPORTS="${{ inputs.published-exports }}"
           PLUGINS_FOUND=0
           TOTAL_PLUGINS=0
           PLUGINS_METADATA_COMPLETE="false"
 
-          # Fallback: read from downloaded artifact if input was empty
-          if [ -f "published-exports.txt" ]; then
-            PUBLISHED_EXPORTS="$(cat published-exports.txt)"
-            echo "Artifact content: $PUBLISHED_EXPORTS"
-          fi
-
           if [ -z "$PUBLISHED_EXPORTS" ]; then
-            echo "No published exports provided or found via artifact. Nothing to do."
+            echo "No published exports provided. Nothing to do."
             echo "plugins_metadata_complete=$PLUGINS_METADATA_COMPLETE" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -141,7 +126,7 @@ jobs:
           echo "plugins_metadata_complete=$PLUGINS_METADATA_COMPLETE" >> "$GITHUB_OUTPUT"
 
       - name: Upload integration-test artefact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4.6.2
         with:
           name: integration-test-artifacts
           path: ${{ format('{0}/tests', inputs.workspace-path) }}
