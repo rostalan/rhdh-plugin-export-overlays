@@ -18,17 +18,19 @@ jobs:
       overlayRepo: ${{ steps.meta.outputs.overlayRepo }}
       overlayCommit: ${{ steps.meta.outputs.overlayCommit }}
       prNumber: ${{ steps.meta.outputs.pr }}
+      publishedExports: ${{ steps.meta.outputs.publishedExports }}
     steps:
       - name: Download published-exports artifact
-        uses: dawidd6/action-download-artifact@v6
+        uses: dawidd6/action-download-artifact@v6.1.1
         with:
           workflow: pr-actions.yaml
           name: published-exports
           workflow_conclusion: success
+          pr: ${{ github.event.workflow_run.pull_requests[0].number }}
           workflow_search: true
           search_artifacts: true
           check_artifacts: true
-          if_no_artifact_found: error
+          if_no_artifact_found: fail
 
       - name: Read meta
         id: meta
@@ -40,6 +42,7 @@ jobs:
           overlayRepo=$(jq -r .overlayRepo meta.json)
           overlayCommit=$(jq -r .overlayCommit meta.json)
           pr=$(jq -r '.pr // "null"' meta.json)
+          publishedExports=$(cat published-exports.txt)
           echo "Parsed values: workspace=$workspace, overlayBranch=$overlayBranch, overlayRepo=$overlayRepo, overlayCommit=$overlayCommit, pr=$pr"
           test -z "$workspace" && { echo "Missing workspace in meta.json"; exit 1; }
           echo "workspace=$workspace" >> $GITHUB_OUTPUT
@@ -47,6 +50,9 @@ jobs:
           echo "overlayRepo=$overlayRepo" >> $GITHUB_OUTPUT
           echo "overlayCommit=$overlayCommit" >> $GITHUB_OUTPUT
           echo "pr=$pr" >> $GITHUB_OUTPUT
+          echo "publishedExports<<EOF" >> $GITHUB_OUTPUT
+          echo "$publishedExports" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Debug resolved metadata
         run: |
@@ -61,6 +67,7 @@ jobs:
       overlay-branch: ${{ needs.resolve.outputs.overlayBranch }}
       overlay-repo: ${{ needs.resolve.outputs.overlayRepo }}
       workspace-path: ${{ needs.resolve.outputs.workspace }}
+      published-exports: ${{ needs.resolve.outputs.publishedExports }}
 
   integration-tests:
     needs:
@@ -82,7 +89,7 @@ jobs:
       issues: write
     steps:
       - name: Post skipped-test comment
-        uses: actions/github-script@v7
+        uses: actions/github-script@v7.0.1
         with:
           script: |
             const pr = Number('${{ needs.resolve.outputs.prNumber }}');
@@ -116,7 +123,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Post test result comment and status
-        uses: actions/github-script@v7
+        uses: actions/github-script@v7.0.1
         with:
           script: |
             const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
@@ -153,10 +160,4 @@ jobs:
             
             const body = success
               ? `:white_check_mark: [Integration test workflow](${runUrl}) passed. All plugins loaded successfully.\n`
-              : `:x: \n[Integration test workflow](${runUrl}) failed. These plugins failed to load:${failed ? `\n${failed}` : ''}\n`;
-            await github.rest.issues.createComment({
-              issue_number: pr,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body,
-            });
+              : `:x: \n[Integration test workflow](${runUrl}) failed. These plugins failed to load:${failed ? `
