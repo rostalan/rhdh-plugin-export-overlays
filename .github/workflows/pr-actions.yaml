@@ -211,7 +211,7 @@ jobs:
           {"workspace":"${WORKSPACE}","overlayBranch":"${OVERLAY_BRANCH}","overlayRepo":"${OVERLAY_REPO}","overlayCommit":"${{ needs.prepare.outputs.overlay-commit }}","pr":${PR_NUMBER}}
           EOF
       - name: Upload published-exports artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4.6.2
         with:
           name: published-exports
           path: published-exports
