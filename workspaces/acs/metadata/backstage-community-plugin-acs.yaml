@@ -1,0 +1,14 @@
+packageName: "@backstage-community/plugin-acs"
+support: tech-preview
+lifecycle: active
+configs:
+  default:
+    dynamicPlugins:
+      frontend:
+        backstage-community.plugin-acs:
+          mountPoints:
+
+  additional:
+    - title: some title
+      content:
+        ...  
