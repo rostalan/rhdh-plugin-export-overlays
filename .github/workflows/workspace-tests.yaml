@@ -60,6 +60,7 @@ jobs:
           pr: ${{ env.PR_NUMBER }}
           workflow: pr-actions.yaml
           workflow_conclusion: success
+          pr: ${{ github.event.workflow_run.pull_requests[0].number }}
           workflow_search: true
           search_artifacts: true
           check_artifacts: true
