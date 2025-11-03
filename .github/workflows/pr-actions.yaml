@@ -32,6 +32,10 @@ jobs:
               core.setFailed(errorMsg);
               return;
             }
+            if (matchingCommands.length === 0) {
+              core.notice('No command found in comment - workflow ends without action');
+              process.exit(78);
+            }
             
             const firstMatching = matchingCommands[0] || '';
             core.setOutput('command_name', firstMatching.startsWith('/') ? firstMatching.slice(1) : firstMatching);
