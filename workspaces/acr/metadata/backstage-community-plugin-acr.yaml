@@ -42,3 +42,4 @@ spec:
                     if:
                       anyOf:
                         - isAcrAvailable
+
