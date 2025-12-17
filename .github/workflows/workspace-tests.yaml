@@ -31,9 +31,19 @@ jobs:
           path: ./context
           if_no_artifact_found: fail
 
+      - name: Check workspace from context
+        id: context
+        run: |
+          workspace=$(jq -r .workspace ./context/meta.json)
+          echo "workspace=$workspace" >> $GITHUB_OUTPUT
+          if [ -z "$workspace" ]; then
+            echo "No workspace in context - skipping tests"
+          fi
+
       # note: the 'pr:' filter is intentionally omitted as it is unreliable for comment-triggered
       # workflows on forks. PR is verified manually in the next step.
       - name: Download latest published-exports artifact
+        if: steps.context.outputs.workspace != ''
         uses: dawidd6/action-download-artifact@v6
         with:
           name: published-exports
@@ -45,6 +55,7 @@ jobs:
           if_no_artifact_found: fail
 
       - name: Verify published-exports artifact belongs to triggering PR
+        if: steps.context.outputs.workspace != ''
         run: |
           triggering_pr=$(jq -r .pr ./context/meta.json)
           artifact_pr=$(jq -r .pr ./meta.json)
@@ -55,27 +66,31 @@ jobs:
             exit 1
           fi
 
-      - name: Read published-exports artifact metadata
+      - name: Read artifact metadata
         id: meta
         run: |
-          echo "Contents of meta.json:"
-          cat meta.json || echo "meta.json not found"
-          workspace=$(jq -r .workspace meta.json)
-          overlayBranch=$(jq -r .overlayBranch meta.json)
-          overlayRepo=$(jq -r .overlayRepo meta.json)
-          overlayCommit=$(jq -r .overlayCommit meta.json)
-          pr=$(jq -r '.pr // "null"' meta.json)
-          publishedExports=$(cat published-exports.txt)
-          echo "Parsed values: workspace=$workspace, overlayBranch=$overlayBranch, overlayRepo=$overlayRepo, overlayCommit=$overlayCommit, pr=$pr"
-          test -z "$workspace" && { echo "Missing workspace in meta.json"; exit 1; }
-          echo "workspace=$workspace" >> $GITHUB_OUTPUT
-          echo "overlayBranch=$overlayBranch" >> $GITHUB_OUTPUT
-          echo "overlayRepo=$overlayRepo" >> $GITHUB_OUTPUT
-          echo "overlayCommit=$overlayCommit" >> $GITHUB_OUTPUT
-          echo "pr=$pr" >> $GITHUB_OUTPUT
-          echo "publishedExports<<EOF" >> $GITHUB_OUTPUT
-          echo "$publishedExports" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          workspace="${{ steps.context.outputs.workspace }}"
+          if [[ -n "$workspace" ]]; then
+            meta_file="./meta.json"
+            exports_file="./published-exports.txt"
+          else
+            meta_file="./context/meta.json"
+            exports_file=""
+          fi
+          {
+            echo "workspace=$workspace"
+            echo "overlayBranch=$(jq -r .overlayBranch "$meta_file")"
+            echo "overlayRepo=$(jq -r .overlayRepo "$meta_file")"
+            echo "overlayCommit=$(jq -r .overlayCommit "$meta_file")"
+            echo "pr=$(jq -r '.pr // "null"' "$meta_file")"
+            if [[ -n "$workspace" ]] && [[ -f "$exports_file" ]]; then
+              echo "publishedExports<<EOF"
+              cat "$exports_file"
+              echo "EOF"
+            else
+              echo "publishedExports="
+            fi
+          } >> $GITHUB_OUTPUT
 
       - name: Debug resolved metadata
         env:
