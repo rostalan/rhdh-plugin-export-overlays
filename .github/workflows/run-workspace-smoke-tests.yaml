@@ -78,8 +78,10 @@ jobs:
       - name: Download and extract plugins
         working-directory: ./artifacts/harness
         run: |
+          set -o pipefail
           cp ../dynamic-plugins.test.yaml dynamic-plugins.yaml
-          python3 install-dynamic-plugins.py ./dynamic-plugins-root
+          mkdir -p ./dynamic-plugins-root
+          python3 install-dynamic-plugins.py ./dynamic-plugins-root 2>&1 | tee ../smoke-setup.log
         env:
           SKIP_INTEGRITY_CHECK: "true"
 
@@ -127,7 +129,7 @@ jobs:
           else
             echo "success=false" >> "$GITHUB_OUTPUT"
             echo "failed-plugins<<EOF" >> "$GITHUB_OUTPUT"
-            echo "(results-file-missing)" >> "$GITHUB_OUTPUT"
+            echo "(setup-failure-before-results)" >> "$GITHUB_OUTPUT"
             echo "EOF" >> "$GITHUB_OUTPUT"
           fi
 
@@ -143,20 +145,25 @@ jobs:
         id: capture-errors
         continue-on-error: true
         run: |
+          SETUP_LOG_FILE="./artifacts/smoke-setup.log"
           LOG_FILE="./artifacts/smoke-test.log"
           echo "error-logs<<EOF" >> "$GITHUB_OUTPUT"
+          if [ -f "$SETUP_LOG_FILE" ]; then
+            echo "--- setup errors ---"
+            grep -iE -B 2 -A 2 "(error|exception|failed|failure|traceback)" "$SETUP_LOG_FILE" \
+              | grep -vE "(no errors|successfully|resolved)" \
+              | tail -120 || echo "No setup error patterns found."
+            echo
+          fi
           if [ -f "$LOG_FILE" ]; then
+            echo "--- smoke test errors ---"
             grep -iE -B 1 -A 1 "(error|exception|failed|failure)" "$LOG_FILE" \
               | grep -vE "(no errors|successfully|resolved)" \
               | tail -100 || echo "No error patterns found in logs."
-          else
+          elif [ ! -f "$SETUP_LOG_FILE" ]; then
             echo "No smoke test log available."
           fi
           echo "EOF" >> "$GITHUB_OUTPUT"
-
-      - name: Print full smoke test log
-        if: always()
-        run: cat ./artifacts/smoke-test.log 2>/dev/null || echo "No log file"
 
       - name: Cleanup
         if: always()
