@@ -554,6 +554,31 @@ async function probeFrontendPlugins(
   const normalizePluginName = (name: string): string =>
     name.replace(/-dynamic$/, "");
 
+  console.log(`[frontend-probe] raw loaded-plugins entries: ${body.length}`);
+  const bodyPreview = body.slice(0, 10).map((entry: unknown) => {
+    if (!entry || typeof entry !== "object") {
+      return { type: typeof entry, value: String(entry) };
+    }
+    const candidate = entry as Record<string, unknown>;
+    return {
+      keys: Object.keys(candidate).sort().join(","),
+      name: typeof candidate.name === "string" ? candidate.name : undefined,
+      pluginId:
+        typeof candidate.pluginId === "string" ? candidate.pluginId : undefined,
+      packageName:
+        typeof candidate.packageName === "string"
+          ? candidate.packageName
+          : undefined,
+      platform:
+        typeof candidate.platform === "string" ? candidate.platform : undefined,
+      failure:
+        typeof candidate.failure === "string" ? candidate.failure : undefined,
+    };
+  });
+  console.log(
+    `[frontend-probe] loaded-plugins preview: ${JSON.stringify(bodyPreview)}`,
+  );
+
   const loadedPlugins = body.filter(
     (lp: unknown): lp is LoadedPlugin =>
       !!lp &&
