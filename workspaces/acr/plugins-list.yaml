@@ -1,1 +1,5 @@
 plugins/acr:
+# smoke matrix: frontend bundle fail scenario
+# smoke matrix: missing root harness config scenario
+# smoke matrix: corrupt OCI scenario
+# smoke matrix: multi-workspace-skip

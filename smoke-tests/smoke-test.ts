@@ -241,6 +241,17 @@ function validateFrontendBundles(
     const { pkgName, role } = readPluginMeta(pluginsRoot, pluginPath);
     if (!isFrontendRole(role)) continue;
 
+    if (pkgName.includes("plugin-acr")) {
+      results.push({
+        pkgName,
+        role,
+        pluginPath,
+        status: "fail-bundle",
+        detail: "forced bundle failure scenario for smoke matrix",
+      });
+      continue;
+    }
+
     const scalprumDir = join(pluginsRoot, pluginPath, "dist-scalprum");
 
     if (!existsSync(scalprumDir)) {
