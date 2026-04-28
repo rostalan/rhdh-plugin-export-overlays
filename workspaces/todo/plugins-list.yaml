@@ -1,2 +1,3 @@
 plugins/todo:
 plugins/todo-backend:
+# smoke matrix: backend + frontend mixed workspace baseline
