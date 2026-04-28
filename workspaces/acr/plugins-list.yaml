@@ -1,1 +1,3 @@
 plugins/acr:
+# smoke matrix: corrupt OCI scenario
+# smoke matrix: multi-workspace-skip
