@@ -28,16 +28,4 @@ spec:
     - azure-container-registry
   appConfigExamples:
     - title: Default configuration
-      content:
-        dynamicPlugins:
-          frontend:
-            backstage-community.plugin-acr:
-              mountPoints:
-                - mountPoint: entity.page.image-registry/cards
-                  importName: AcrImagesEntityContent
-                  config:
-                    layout:
-                      gridColumn: 1 / -1
-                    if:
-                      anyOf:
-                        - isAcrAvailable
+      content: {}
