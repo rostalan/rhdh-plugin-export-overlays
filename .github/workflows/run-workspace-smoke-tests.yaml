@@ -87,7 +87,7 @@ jobs:
 
       - name: Install smoke test dependencies
         working-directory: ./artifacts/harness
-        run: npm install --ignore-scripts 2>&1 | tail -5
+        run: npm install 2>&1 | tail -5
 
       - name: Run smoke test
         id: smoke-test
