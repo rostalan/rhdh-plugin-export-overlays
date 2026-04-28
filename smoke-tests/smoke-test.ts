@@ -121,6 +121,47 @@ function loadEnvFile(filePath: string | null): void {
   }
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function mergeConfigObjects(
+  base: Record<string, unknown>,
+  incoming: Record<string, unknown>,
+): Record<string, unknown> {
+  const merged: Record<string, unknown> = { ...base };
+  for (const [key, incomingValue] of Object.entries(incoming)) {
+    const baseValue = merged[key];
+    if (isRecord(baseValue) && isRecord(incomingValue)) {
+      merged[key] = mergeConfigObjects(baseValue, incomingValue);
+      continue;
+    }
+    merged[key] = incomingValue;
+  }
+  return merged;
+}
+
+function loadRootConfigFromPaths(configPaths: string[]): Record<string, unknown> {
+  let mergedConfig: Record<string, unknown> = {};
+  for (const configPath of configPaths) {
+    try {
+      const parsed = yaml.load(readFileSync(configPath, "utf8"));
+      if (isRecord(parsed)) {
+        mergedConfig = mergeConfigObjects(mergedConfig, parsed);
+      } else {
+        console.warn(
+          `[config] skipping non-object config content from ${configPath}`,
+        );
+      }
+    } catch (err) {
+      console.warn(
+        `[config] failed to load config ${configPath}: ${toErrorMessage(err)}`,
+      );
+    }
+  }
+  return mergedConfig;
+}
+
 // ---------------------------------------------------------------------------
 // Plugins YAML
 // ---------------------------------------------------------------------------
@@ -210,7 +251,9 @@ function validateFrontendBundles(
 // ---------------------------------------------------------------------------
 
 async function bootBackend(configPaths: string[]): Promise<{ server: any; port: number }> {
-  const { startTestBackend } = await import("@backstage/backend-test-utils");
+  const { startTestBackend, mockServices } = await import(
+    "@backstage/backend-test-utils"
+  );
   const {
     dynamicPluginsFeatureLoader,
     CommonJSModuleLoader,
@@ -221,6 +264,15 @@ async function bootBackend(configPaths: string[]): Promise<{ server: any; port: 
   const { createServiceFactory, createBackendPlugin, coreServices } =
     await import("@backstage/backend-plugin-api");
   const path = await import("node:path");
+  const rootConfigData = loadRootConfigFromPaths(configPaths);
+  let frontendResolverProviderCalls = 0;
+
+  console.log(
+    `[backend-boot] config files used: ${configPaths.join(", ") || "(none)"}`,
+  );
+  console.log(
+    `[backend-boot] root config top-level keys: ${Object.keys(rootConfigData).join(", ") || "(none)"}`,
+  );
 
   const smokeTestProbePlugin = createBackendPlugin({
     pluginId: "smoke-test-probe",
@@ -234,7 +286,11 @@ async function bootBackend(configPaths: string[]): Promise<{ server: any; port: 
           const { Router } = await import("express");
           const router = Router();
           router.get("/loaded-plugins", (_, res) => {
-            res.json(dynamicPlugins.plugins({ includeFailed: true }));
+            const loadedPlugins = dynamicPlugins.plugins({ includeFailed: true });
+            console.log(
+              `[probe-api] loaded plugins requested; count=${Array.isArray(loadedPlugins) ? loadedPlugins.length : -1}, resolverProviderCalls=${frontendResolverProviderCalls}`,
+            );
+            res.json(loadedPlugins);
           });
           http.use(router);
           try {
@@ -250,37 +306,37 @@ async function bootBackend(configPaths: string[]): Promise<{ server: any; port: 
     },
   });
 
-  const baseArgv = [...process.argv];
-  const configArgv = configPaths.flatMap((configPath) => ["--config", configPath]);
-  process.argv = [...baseArgv, ...configArgv];
-
   let server;
-  try {
-    ({ server } = await startTestBackend({
-      features: [
-        dynamicPluginsFeatureLoader({
-          schemaLocator(pluginPackage: any) {
-            const platform = PackageRoles.getRoleInfo(
-              pluginPackage.manifest.backstage.role,
-            ).platform;
-            return path.join(
-              platform === "node" ? "dist" : "dist-scalprum",
-              "configSchema.json",
+  ({ server } = await startTestBackend({
+    features: [
+      dynamicPluginsFeatureLoader({
+        schemaLocator(pluginPackage: any) {
+          const platform = PackageRoles.getRoleInfo(
+            pluginPackage.manifest.backstage.role,
+          ).platform;
+          return path.join(
+            platform === "node" ? "dist" : "dist-scalprum",
+            "configSchema.json",
+          );
+        },
+        moduleLoader: (logger: any) => new CommonJSModuleLoader({ logger }),
+      }),
+      mockServices.rootConfig.factory({ data: rootConfigData }),
+      createServiceFactory({
+        service: dynamicPluginsFrontendServiceRef,
+        deps: {},
+        factory: () => ({
+          setResolverProvider(provider: unknown) {
+            frontendResolverProviderCalls += 1;
+            console.log(
+              `[frontend-service] resolver provider registered (call #${frontendResolverProviderCalls}, type=${typeof provider})`,
             );
           },
-          moduleLoader: (logger: any) => new CommonJSModuleLoader({ logger }),
         }),
-        createServiceFactory({
-          service: dynamicPluginsFrontendServiceRef,
-          deps: {},
-          factory: () => ({ setResolverProvider() {} }),
-        }),
-        smokeTestProbePlugin,
-      ],
-    }));
-  } finally {
-    process.argv = baseArgv;
-  }
+      }),
+      smokeTestProbePlugin,
+    ],
+  }));
 
   const addr = server.address();
   const port = typeof addr === "object" ? addr.port : 7007;
@@ -415,17 +471,70 @@ async function probeFrontendPlugins(
     return failAll("invalid probe response");
   }
 
+  console.log(`[frontend-probe] raw loaded-plugins entries: ${body.length}`);
+  const bodyPreview = body.slice(0, 10).map((entry: unknown) => {
+    if (!entry || typeof entry !== "object") {
+      return { type: typeof entry, value: String(entry) };
+    }
+    const candidate = entry as Record<string, unknown>;
+    return {
+      keys: Object.keys(candidate).sort().join(","),
+      name: typeof candidate.name === "string" ? candidate.name : undefined,
+      pluginId:
+        typeof candidate.pluginId === "string" ? candidate.pluginId : undefined,
+      packageName:
+        typeof candidate.packageName === "string"
+          ? candidate.packageName
+          : undefined,
+      platform:
+        typeof candidate.platform === "string" ? candidate.platform : undefined,
+      failure:
+        typeof candidate.failure === "string" ? candidate.failure : undefined,
+    };
+  });
+  console.log(
+    `[frontend-probe] loaded-plugins preview: ${JSON.stringify(bodyPreview)}`,
+  );
+
+  const loadedPlugins = body.filter(
+    (lp: unknown): lp is LoadedPlugin =>
+      !!lp &&
+      typeof lp === "object" &&
+      "name" in lp &&
+      typeof (lp as LoadedPlugin).name === "string",
+  );
+
+  const expectedFrontendNames = frontendPlugins.map((fp) => fp.pkgName);
+  const loadedFrontendNames = loadedPlugins
+    .map((lp) => lp.name)
+    .filter((name): name is string => typeof name === "string");
+
+  console.log(
+    `[frontend-probe] expected frontend plugins: ${expectedFrontendNames.join(", ") || "(none)"}`,
+  );
+  console.log(
+    `[frontend-probe] loaded plugin names from backend: ${loadedFrontendNames.join(", ") || "(none)"}`,
+  );
+
+  const normalizePluginName = (name: string): string =>
+    name.replace(/-dynamic$/, "");
+
   const toFrontendProbeResult = (
     fp: PluginMeta & { pluginPath: string },
     loaded: LoadedPlugin | undefined,
+    normalizedMatches: string[],
   ): ProbeResult => {
     if (!loaded) {
+      const mismatchDetail =
+        normalizedMatches.length > 0
+          ? `name mismatch; expected "${fp.pkgName}", but similar loaded name(s): ${normalizedMatches.join(", ")}`
+          : "not found in loaded plugins list";
       return {
         pkgName: fp.pkgName,
         role: fp.role,
         pluginPath: fp.pluginPath,
         status: "fail-load",
-        detail: "not found in loaded plugins list",
+        detail: mismatchDetail,
       };
     }
     if (loaded.platform !== "web") {
@@ -464,7 +573,20 @@ async function probeFrontendPlugins(
       loadedCandidate && typeof loadedCandidate === "object"
         ? (loadedCandidate as LoadedPlugin)
         : undefined;
-    results.push(toFrontendProbeResult(fp, loaded));
+
+    const normalizedMatches = loadedFrontendNames.filter(
+      (loadedName) =>
+        normalizePluginName(loadedName) === normalizePluginName(fp.pkgName) &&
+        loadedName !== fp.pkgName,
+    );
+
+    if (!loaded) {
+      console.log(
+        `[frontend-probe] no exact loaded plugin match for ${fp.pkgName}; normalized candidates: ${normalizedMatches.join(", ") || "(none)"}`,
+      );
+    }
+
+    results.push(toFrontendProbeResult(fp, loaded, normalizedMatches));
   }
   return results;
 }
