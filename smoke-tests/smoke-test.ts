@@ -554,6 +554,29 @@ async function probeFrontendPlugins(
   const normalizePluginName = (name: string): string =>
     name.replace(/-dynamic$/, "");
 
+  const loadedPlugins = body.filter(
+    (lp: unknown): lp is LoadedPlugin =>
+      !!lp &&
+      typeof lp === "object" &&
+      "name" in lp &&
+      typeof (lp as LoadedPlugin).name === "string",
+  );
+
+  const expectedFrontendNames = frontendPlugins.map((fp) => fp.pkgName);
+  const loadedFrontendNames = loadedPlugins
+    .map((lp) => lp.name)
+    .filter((name): name is string => typeof name === "string");
+
+  console.log(
+    `[frontend-probe] expected frontend plugins: ${expectedFrontendNames.join(", ") || "(none)"}`,
+  );
+  console.log(
+    `[frontend-probe] loaded plugin names from backend: ${loadedFrontendNames.join(", ") || "(none)"}`,
+  );
+
+  const normalizePluginName = (name: string): string =>
+    name.replace(/-dynamic$/, "");
+
   const toFrontendProbeResult = (
     fp: PluginMeta & { pluginPath: string },
     loaded: LoadedPlugin | undefined,
@@ -607,7 +630,6 @@ async function probeFrontendPlugins(
         normalizePluginName(loadedName) === normalizePluginName(fp.pkgName) &&
         loadedName !== fp.pkgName,
     );
-
     if (!loaded) {
       console.log(
         `[frontend-probe] no exact loaded plugin match for ${fp.pkgName}; normalized candidates: ${normalizedMatches.join(", ") || "(none)"}`,
