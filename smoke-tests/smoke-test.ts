@@ -70,6 +70,26 @@ type LoadedPlugin = {
   failure?: string;
 };
 
+async function fetchLoadedPlugins(port: number): Promise<LoadedPlugin[]> {
+  const res = await fetch(
+    `http://localhost:${port}/api/smoke-test-probe/loaded-plugins`,
+  );
+  if (!res.ok) {
+    throw new Error(`probe returned HTTP ${res.status}`);
+  }
+  const body = await res.json();
+  if (!Array.isArray(body)) {
+    throw new Error("invalid probe response");
+  }
+  return body.filter(
+    (lp: unknown): lp is LoadedPlugin =>
+      !!lp &&
+      typeof lp === "object" &&
+      "name" in lp &&
+      typeof (lp as LoadedPlugin).name === "string",
+  );
+}
+
 function toErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
@@ -141,7 +161,9 @@ function mergeConfigObjects(
   return merged;
 }
 
-function loadRootConfigFromPaths(configPaths: string[]): Record<string, unknown> {
+function loadRootConfigFromPaths(
+  configPaths: string[],
+): Record<string, unknown> {
   let mergedConfig: Record<string, unknown> = {};
   for (const configPath of configPaths) {
     try {
@@ -167,7 +189,9 @@ function loadRootConfigFromPaths(configPaths: string[]): Record<string, unknown>
 // ---------------------------------------------------------------------------
 
 function parsePluginsYaml(filePath: string): PluginEntry[] {
-  const doc = yaml.load(readFileSync(filePath, "utf8")) as PluginsDoc | undefined;
+  const doc = yaml.load(readFileSync(filePath, "utf8")) as
+    | PluginsDoc
+    | undefined;
   return (doc?.plugins ?? []).filter((p) => !p.disabled);
 }
 
@@ -250,10 +274,11 @@ function validateFrontendBundles(
 // Backend boot (startTestBackend + probe plugin)
 // ---------------------------------------------------------------------------
 
-async function bootBackend(configPaths: string[]): Promise<{ server: any; port: number }> {
-  const { startTestBackend, mockServices } = await import(
-    "@backstage/backend-test-utils"
-  );
+async function bootBackend(
+  configPaths: string[],
+): Promise<{ server: any; port: number }> {
+  const { startTestBackend, mockServices } =
+    await import("@backstage/backend-test-utils");
   const {
     dynamicPluginsFeatureLoader,
     CommonJSModuleLoader,
@@ -282,11 +307,19 @@ async function bootBackend(configPaths: string[]): Promise<{ server: any; port: 
           http: coreServices.httpRouter,
           dynamicPlugins: dynamicPluginsServiceRef,
         },
-        async init({ http, dynamicPlugins }: { http: any; dynamicPlugins: any }) {
+        async init({
+          http,
+          dynamicPlugins,
+        }: {
+          http: any;
+          dynamicPlugins: any;
+        }) {
           const { Router } = await import("express");
           const router = Router();
           router.get("/loaded-plugins", (_, res) => {
-            const loadedPlugins = dynamicPlugins.plugins({ includeFailed: true });
+            const loadedPlugins = dynamicPlugins.plugins({
+              includeFailed: true,
+            });
             console.log(
               `[probe-api] loaded plugins requested; count=${Array.isArray(loadedPlugins) ? loadedPlugins.length : -1}, resolverProviderCalls=${frontendResolverProviderCalls}`,
             );
@@ -366,6 +399,7 @@ async function probePluginRoutes(
   plugins: PluginEntry[],
   port: number,
   pluginsRoot: string,
+  loadedPlugins: LoadedPlugin[],
 ): Promise<ProbeResult[]> {
   const results: ProbeResult[] = [];
   for (const plugin of plugins) {
@@ -378,6 +412,33 @@ async function probePluginRoutes(
 
     if (role !== "backend-plugin") {
       results.push({ pkgName, role, pluginPath, status: "skip" });
+      continue;
+    }
+
+    const loaded = loadedPlugins.find(
+      (lp) => lp.name === pkgName && lp.platform === "node",
+    );
+    if (!loaded) {
+      results.push({
+        pkgName,
+        role,
+        pluginPath,
+        pluginId: pluginId ?? "(unknown)",
+        status: "fail-load",
+        detail: "backend plugin not found in loaded plugins registry",
+      });
+      continue;
+    }
+
+    if (loaded.failure) {
+      results.push({
+        pkgName,
+        role,
+        pluginPath,
+        pluginId: pluginId ?? "(unknown)",
+        status: "fail-load",
+        detail: `backend plugin reported load failure: ${loaded.failure}`,
+      });
       continue;
     }
 
@@ -402,6 +463,10 @@ async function probePluginRoutes(
         pluginId,
         status: res.status === 404 ? "warn" : "pass",
         http: res.status,
+        detail:
+          res.status === 404
+            ? "plugin is loaded, but /api/<pluginId> route returned 404"
+            : undefined,
       });
     } catch (err) {
       results.push({
@@ -423,8 +488,8 @@ async function probePluginRoutes(
 
 async function probeFrontendPlugins(
   plugins: PluginEntry[],
-  port: number,
   pluginsRoot: string,
+  loadedPlugins: LoadedPlugin[],
 ): Promise<ProbeResult[]> {
   const frontendPlugins: Array<PluginMeta & { pluginPath: string }> = [];
   for (const plugin of plugins) {
@@ -447,32 +512,10 @@ async function probeFrontendPlugins(
       detail,
     }));
 
-  let res;
-  try {
-    res = await fetch(
-      `http://localhost:${port}/api/smoke-test-probe/loaded-plugins`,
-    );
-  } catch (err) {
-    return failAll(`probe endpoint unreachable: ${toErrorMessage(err)}`);
-  }
-
-  if (!res.ok) {
-    return failAll(`probe returned HTTP ${res.status}`);
-  }
-
-  let body;
-  try {
-    body = await res.json();
-  } catch {
-    return failAll("invalid probe response");
-  }
-
-  if (!Array.isArray(body)) {
-    return failAll("invalid probe response");
-  }
-
-  console.log(`[frontend-probe] raw loaded-plugins entries: ${body.length}`);
-  const bodyPreview = body.slice(0, 10).map((entry: unknown) => {
+  console.log(
+    `[frontend-probe] raw loaded-plugins entries: ${loadedPlugins.length}`,
+  );
+  const bodyPreview = loadedPlugins.slice(0, 10).map((entry: unknown) => {
     if (!entry || typeof entry !== "object") {
       return { type: typeof entry, value: String(entry) };
     }
@@ -494,14 +537,6 @@ async function probeFrontendPlugins(
   });
   console.log(
     `[frontend-probe] loaded-plugins preview: ${JSON.stringify(bodyPreview)}`,
-  );
-
-  const loadedPlugins = body.filter(
-    (lp: unknown): lp is LoadedPlugin =>
-      !!lp &&
-      typeof lp === "object" &&
-      "name" in lp &&
-      typeof (lp as LoadedPlugin).name === "string",
   );
 
   const expectedFrontendNames = frontendPlugins.map((fp) => fp.pkgName);
@@ -565,14 +600,7 @@ async function probeFrontendPlugins(
 
   const results: ProbeResult[] = [];
   for (const fp of frontendPlugins) {
-    const loadedCandidate = body.find(
-      (lp: unknown) =>
-        lp && typeof lp === "object" && "name" in lp && (lp as LoadedPlugin).name === fp.pkgName,
-    );
-    const loaded =
-      loadedCandidate && typeof loadedCandidate === "object"
-        ? (loadedCandidate as LoadedPlugin)
-        : undefined;
+    const loaded = loadedPlugins.find((lp) => lp.name === fp.pkgName);
 
     const normalizedMatches = loadedFrontendNames.filter(
       (loadedName) =>
@@ -605,14 +633,20 @@ function logPassResult(result: ProbeResult): string | null {
   return null;
 }
 
-function logResultAndCollectFailures(result: ProbeResult, failedPlugins: string[]): void {
+function logResultAndCollectFailures(
+  result: ProbeResult,
+  failedPlugins: string[],
+): void {
   const statusHandlers: Partial<
     Record<ResultStatus, () => { line: string | null; failed?: boolean }>
   > = {
     skip: () => ({ line: `  SKIP  ${result.pkgName}  (${result.role})` }),
     pass: () => ({ line: logPassResult(result) }),
     warn: () => ({
-      line: `  WARN  ${result.pkgName}  → /api/${result.pluginId}  (404 — pluginId guess may be wrong)`,
+      line:
+        result.detail && result.pluginId
+          ? `  WARN  ${result.pkgName}  → /api/${result.pluginId}  (${result.http}; ${result.detail})`
+          : `  WARN  ${result.pkgName}  → /api/${result.pluginId}  (404 — pluginId guess may be wrong)`,
     }),
     "fail-bundle": () => ({
       line: `  FAIL  ${result.pkgName}  [bundle] ${result.detail}`,
@@ -781,18 +815,33 @@ async function main(): Promise<void> {
 
   let success = false;
   try {
+    let loadedPlugins: LoadedPlugin[];
+    try {
+      loadedPlugins = await fetchLoadedPlugins(port);
+      console.log(
+        `[backend-probe] loaded plugin registry entries: ${loadedPlugins.length}`,
+      );
+    } catch (err) {
+      const probeError = toErrorMessage(err);
+      console.error(
+        `  ERROR: unable to query loaded plugins registry: ${probeError}`,
+      );
+      process.exit(1);
+    }
+
     console.log("\n4a. Probing backend plugin routes");
     const backendResults = await probePluginRoutes(
       plugins,
       port,
       args.pluginsRoot,
+      loadedPlugins,
     );
 
     console.log("\n4b. Probing frontend loaded plugins");
     const frontendLoadResults = await probeFrontendPlugins(
       plugins,
-      port,
       args.pluginsRoot,
+      loadedPlugins,
     );
 
     const frontendResults = mergeFrontendResults(
