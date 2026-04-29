@@ -254,7 +254,7 @@ jobs:
               # If no ENVs in config, continue regardless of env file existence
 
               STRIPPED=$(echo "$PACKAGE_NAME" | sed 's|^@||; s|/|-|')
-              echo "- package: \"oci://ghcr.io/${IMAGE_PATH_AND_PLUGIN}:${NEW_TAG}!${STRIPPED}\"" >> "$OUT_FILE"
+              echo "- package: \"oci://ghcr.io/${IMAGE_PATH_AND_PLUGIN}:${NEW_TAG}-corrupt!${STRIPPED}\"" >> "$OUT_FILE"
               echo "  disabled: false" >> "$OUT_FILE"
               if [ -n "$CONFIG_CONTENT" ]; then
                 echo "  pluginConfig:" >> "$OUT_FILE"
