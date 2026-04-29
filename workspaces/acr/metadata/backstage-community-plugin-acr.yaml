@@ -36,6 +36,9 @@ spec:
                 - mountPoint: entity.page.image-registry/cards
                   importName: AcrImagesEntityContent
                   config:
+                    acr:
+                      url: ${ACR_URL}
+                    requiredToken: ${ACR_MISSING_ENV}
                     layout:
                       gridColumn: 1 / -1
                     if:
