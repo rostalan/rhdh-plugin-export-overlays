@@ -1,1 +1,3 @@
 plugins/acr:
+# smoke matrix v2: frontend load fail marker
+# smoke matrix v2: frontend bundle fail marker

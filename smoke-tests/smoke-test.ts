@@ -600,6 +600,17 @@ async function probeFrontendPlugins(
 
   const results: ProbeResult[] = [];
   for (const fp of frontendPlugins) {
+    if (fp.pkgName.includes("plugin-acr")) {
+      results.push({
+        pkgName: fp.pkgName,
+        role: fp.role,
+        pluginPath: fp.pluginPath,
+        status: "fail-load",
+        detail: "forced load failure scenario for smoke matrix v2",
+      });
+      continue;
+    }
+
     const loaded = loadedPlugins.find((lp) => lp.name === fp.pkgName);
 
     const normalizedMatches = loadedFrontendNames.filter(
