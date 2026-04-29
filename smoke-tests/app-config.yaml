@@ -1,5 +1,0 @@
-dynamicPlugins:
-  rootDirectory: ./dynamic-plugins-root
-  sources:
-    local: {}
-  frontend: {}
