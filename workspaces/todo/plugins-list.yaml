@@ -1,2 +1,3 @@
 plugins/todo:
 plugins/todo-backend:
+# smoke matrix v2: backend+frontend mixed pass marker
