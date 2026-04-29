@@ -1,1 +1,4 @@
 plugins/acr:
+# smoke matrix v2: missing root harness config marker
+# smoke matrix v2: corrupt oci tag scenario marker
+# smoke matrix v2: multi-workspace-skip marker
