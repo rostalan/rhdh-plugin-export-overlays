@@ -110,4 +110,3 @@ plugins/techdocs-backend: --embed-package @backstage/plugin-search-backend-modul
 plugins/techdocs-module-addons-contrib:
 plugins/user-settings-backend:
 plugins/user-settings:
-
