@@ -1,0 +1,32 @@
+apiVersion: extensions.backstage.io/v1alpha1
+kind: Package
+metadata:
+  name: roadiehq-scaffolder-backend-module-http-request
+  namespace: rhdh
+  title: "Scaffolder Backend Module HTTP Request"
+  links:
+    - url: https://red.ht/rhdh
+      title: Homepage
+    - url: https://github.com/RoadieHQ/roadie-backstage-plugins/issues
+      title: Bugs
+    - title: Source Code
+      url: https://github.com/RoadieHQ/roadie-backstage-plugins/tree/main/plugins/scaffolder-actions/scaffolder-backend-module-http-request
+  annotations:
+    backstage.io/source-location: url:https://github.com/RoadieHQ/roadie-backstage-plugins/tree/main/plugins/scaffolder-actions/scaffolder-backend-module-http-request
+  tags:
+    - software-templates
+spec:
+  packageName: "@roadiehq/scaffolder-backend-module-http-request"
+  # Tag: 1.10--5.6.0, Build date: 2026-05-26T12:36:42Z
+  dynamicArtifact: "oci://quay.io/rhdh/roadiehq-scaffolder-backend-module-http-request@sha256:4868bcc51d9f6356cf76fdfa0e1ad9f151c7a0518fb840ab7c909972d84d015d"
+  version: 5.6.0
+  backstage:
+    role: backend-plugin-module
+    supportedVersions: 1.44.2
+    author: Roadie
+  support: generally-available
+  lifecycle: active
+  partOf:
+    - http-request-scaffolder-action
+  appConfigNotRequired: true
+  appConfigExamples: []
