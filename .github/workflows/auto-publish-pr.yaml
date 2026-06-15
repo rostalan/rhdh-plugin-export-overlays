@@ -274,9 +274,7 @@ jobs:
           overlay-root: ${{ github.workspace }}/overlay-repo/${{ needs.prepare.outputs.workspace }}
           plugins-root: ${{ github.workspace }}/source-repo/${{ steps.source-config.outputs.plugins-root }}
           target-backstage-version: ${{ steps.source-config.outputs.backstage-version }}
-          # Metadata files in this repo intentionally use canonical upstream OCI refs.
-          # Validate against upstream prefix even when workflow runs from a fork.
-          image-repository-prefix: ghcr.io/redhat-developer/rhdh-plugin-export-overlays
+          image-repository-prefix: ${{ needs.prepare.outputs.image-repository-prefix }}
 
       - name: Extract metadata warnings from step summary
         id: extract-metadata-warnings
