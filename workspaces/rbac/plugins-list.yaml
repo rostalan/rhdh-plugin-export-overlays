@@ -1,2 +1,3 @@
+# Workflow validation only; keep plugin selection unchanged.
 plugins/rbac:
 #plugins/rbac-backend:
