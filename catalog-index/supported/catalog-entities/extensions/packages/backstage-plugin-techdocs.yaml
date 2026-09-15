@@ -15,12 +15,13 @@ metadata:
     backstage.io/source-location: url:https://github.com/backstage/backstage/tree/master/plugins/techdocs
   tags: []
 spec:
-  packageName: '@backstage/plugin-techdocs'
-  dynamicArtifact: ./dynamic-plugins/dist/backstage-plugin-techdocs
-  version: 1.17.2
+  packageName: "@backstage/plugin-techdocs"
+  # Tag: bs_1.54.6__1.18.0, Build date: 2026-05-21T21:43:19Z
+  dynamicArtifact: "oci://ghcr.io/redhat-developer/rhdh-plugin-export-overlays/backstage-plugin-techdocs@sha256:f15140b3f9098edd225006e5d21bc47bcd3738c591e8a9acab878cae99b9ffa3"
+  version: 1.18.0
   backstage:
     role: frontend-plugin
-    supportedVersions: 1.49.4
+    supportedVersions: 1.54.6
   author: Red Hat
   support: generally-available
   lifecycle: active

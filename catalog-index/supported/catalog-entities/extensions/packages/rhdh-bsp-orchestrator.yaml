@@ -18,12 +18,12 @@ metadata:
 spec:
   packageName: '@red-hat-developer-hub/backstage-plugin-orchestrator'
 
-  # Tag: bs_1.49.4__5.7.13, Build date: 2026-05-22T15:01:49Z
-  dynamicArtifact: "oci://ghcr.io/redhat-developer/rhdh-plugin-export-overlays/red-hat-developer-hub-backstage-plugin-orchestrator@sha256:8a7ba0ae00a7038261c3b827395f6d2b397a4ae32e36f71207a4c53e7b7ec212"
-  version: 5.7.13
+  # Tag: bs_1.54.6__6.1.0, Build date: 2026-05-22T15:01:49Z
+  dynamicArtifact: "oci://ghcr.io/redhat-developer/rhdh-plugin-export-overlays/red-hat-developer-hub-backstage-plugin-orchestrator@sha256:74953711e1e142a448ae699eec2fe181ee774f22568cc9472e6a737741ae04a8"
+  version: 6.1.0
   backstage:
     role: frontend-plugin
-    supportedVersions: 1.49.4
+    supportedVersions: 1.54.6
   author: Red Hat
   support: generally-available
   lifecycle: active
@@ -35,20 +35,27 @@ spec:
         dynamicPlugins:
           frontend:
             red-hat-developer-hub.backstage-plugin-orchestrator:
+              # Legacy exports require `module: Legacy` — they are not available on the default module.
               translationResources:
                 - importName: orchestratorTranslations
-                  module: Alpha
+                  module: Legacy
                   ref: orchestratorTranslationRef
               appIcons:
                 - importName: OrchestratorIcon
                   name: orchestratorIcon
+                  module: Legacy
               dynamicRoutes:
                 - importName: OrchestratorPage
+                  module: Legacy
                   menuItem:
                     icon: orchestratorIcon
                     text: Orchestrator
                     textKey: menuItem.orchestrator
                   path: /orchestrator
+              menuItems:
+                orchestrator:
+                  parent: default.admin
+                  icon: orchestratorIcon
               entityTabs:
                 - path: /workflows
                   title: Workflows
@@ -57,9 +64,10 @@ spec:
               mountPoints:
                 - mountPoint: entity.page.workflows/cards
                   importName: OrchestratorCatalogTab
+                  module: Legacy
                   config:
                     layout:
                       gridColumn: 1 / -1
-                      if:
-                        anyOf:
-                          - IsOrchestratorCatalogTabAvailable
+                    if:
+                      anyOf:
+                        - hasAnnotation: orchestrator.io/workflows
