@@ -377,7 +377,7 @@ async function createBaselineRoleViaApi(browser: Browser): Promise<void> {
   }
   await withTempPage(browser, async (page) => {
     const loginHelper = new LoginHelper(page);
-    await loginHelper.loginAsKeycloakUser();
+    await loginAsKeycloakUserWithRetry(page, loginHelper);
     const token = await new AuthApiHelper(page).getToken();
     await deleteRoleAndPolicies(token, BASELINE_ROLE_NAME);
     await createRoleWithPolicies(
@@ -567,7 +567,7 @@ export async function removeBaselineRole(
     async () => {
       await withTempPage(browser, async (page) => {
         const loginHelper = new LoginHelper(page);
-        await loginHelper.loginAsKeycloakUser();
+        await loginAsKeycloakUserWithRetry(page, loginHelper);
         const token = await new AuthApiHelper(page).getToken();
         await deleteRoleAndPolicies(token, BASELINE_ROLE_NAME);
 
