@@ -14,6 +14,10 @@ import {
 
 const ensureDataIndexOrSkip = createDataIndexGuard();
 
+const diagnoseLoki =
+  process.env.JOB_NAME ===
+  "periodic-ci-redhat-developer-rhdh-plugin-export-overlays-main-e2e-ocp-operator-nightly";
+
 const UI_PROPS_RBAC_ROLE = "role:default/uiPropsWorkflowTest";
 
 function uiPropsRbacPolicies(): PolicySpec[] {
@@ -57,8 +61,8 @@ export function registerUiPropsTestWorkflowTests(): void {
       await deleteRoleAndPolicies(apiToken, UI_PROPS_RBAC_ROLE);
     });
 
-    test("ui:props test workflow", async ({ page, uiHelper }) => {
-      test.setTimeout(300_000);
+    test("ui:props test workflow", async ({ page, uiHelper }, testInfo) => {
+      test.setTimeout(diagnoseLoki ? 540_000 : 300_000);
       const orchestratorPo = createOrchestratorPO(page, uiHelper);
       await orchestratorPo.openOrchestratorFromSidebar();
       await expect(
@@ -101,7 +105,11 @@ export function registerUiPropsTestWorkflowTests(): void {
         page.getByRole("heading", { name: "Description" }),
       ).toBeVisible();
       const runId = await orchestratorPo.getCurrentRunId();
-      await waitForLokiWorkflowLogs(runId);
+      await waitForLokiWorkflowLogs(
+        runId,
+        undefined,
+        diagnoseLoki ? testInfo.project.name : undefined,
+      );
       const logsDialog = await orchestratorPo.openRunLogsDialog(
         "Test Object Type Support in ui:props",
       );

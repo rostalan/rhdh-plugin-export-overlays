@@ -32,6 +32,7 @@ const lokiHttpsDispatcher = new Agent({
 async function fetchLokiApi(
   probeUrl: string,
   token: string,
+  signal?: AbortSignal,
 ): Promise<{ status: number; body: string }> {
   if (!probeUrl.startsWith("https://")) {
     throw new Error(`Loki API probe requires https URL: ${probeUrl}`);
@@ -42,6 +43,7 @@ async function fetchLokiApi(
       dispatcher: lokiHttpsDispatcher,
       headers: { Authorization: `Bearer ${token}` },
       redirect: "manual",
+      signal,
     } as RequestInit & { dispatcher: Agent });
     return { status: response.status, body: await response.text() };
   } catch (error) {
@@ -380,6 +382,176 @@ export async function configureOrchestratorLoki(): Promise<void> {
   }
 }
 
+async function diagnoseLokiTimeout(
+  namespace: string,
+  instanceId: string,
+  baseUrl: string,
+  token: string,
+): Promise<void> {
+  const oc = (...args: string[]) => runOc(args, 10_000);
+  const pods = JSON.parse(
+    oc(
+      "get",
+      "pods",
+      "-n",
+      namespace,
+      "-l",
+      "app=test-object-type-uiprops",
+      "-o",
+      "json",
+    ),
+  ) as { items: { metadata: { name: string }; spec: { nodeName: string } }[] };
+  const log = (detail: object) =>
+    console.warn(
+      "[loki-timeout-diagnostics]",
+      JSON.stringify({ instanceId, ...detail }),
+    );
+
+  for (const {
+    metadata: { name: pod },
+    spec: { nodeName },
+  } of pods.items) {
+    const stdout = runOcOptional(
+      [
+        "logs",
+        "-n",
+        namespace,
+        pod,
+        "-c",
+        "workflow",
+        "--timestamps",
+        "--since=10m",
+        "--limit-bytes=4194304",
+      ],
+      10_000,
+    ).stdout;
+    const timestamp = stdout
+      .split("\n")
+      .find((line) => line.includes(instanceId))
+      ?.split(" ")[0];
+    const emitted = Date.parse(timestamp ?? "");
+    if (!Number.isFinite(emitted)) continue;
+
+    const deadline = emitted + 300_000;
+    log({ namespace, pod, nodeName, stdoutTimestamp: timestamp });
+    const queries = {
+      pod: `{kubernetes_namespace_name=${JSON.stringify(namespace)},kubernetes_pod_name=${JSON.stringify(pod)}}`,
+      instance: buildLokiInstanceLogQuery(instanceId),
+    };
+    const firstMatchMs = new Map<string, number>();
+    while (Date.now() < deadline && firstMatchMs.size < 2) {
+      await Promise.all(
+        Object.entries(queries).map(async ([query, selector]) => {
+          if (firstMatchMs.has(query)) return;
+          const started = Date.now();
+          const url =
+            query === "instance"
+              ? lokiQueryRangeUrl(baseUrl, selector, 7200)
+              : lokiQueryRangeUrl(
+                  baseUrl,
+                  selector,
+                  Math.ceil((started - emitted) / 1000) + 2,
+                  1000,
+                );
+          let status: number | undefined;
+          try {
+            const response = await fetchLokiApi(
+              url,
+              token,
+              AbortSignal.timeout(
+                Math.max(1, Math.min(8_000, deadline - started)),
+              ),
+            );
+            status = response.status;
+            const durationMs = Date.now() - started;
+            if (status < 200 || status >= 300) {
+              log({ query, status, durationMs });
+              return;
+            }
+            const data = JSON.parse(response.body) as {
+              status: string;
+              data: { result: { values: [string, string][] }[] };
+            };
+            if (data.status !== "success")
+              throw new Error("Loki query did not succeed");
+            const lines = data.data.result.flatMap((stream) => stream.values);
+            const matches = lines.filter(([, line]) =>
+              line.includes(instanceId),
+            ).length;
+            if (matches) firstMatchMs.set(query, Date.now() - emitted);
+            log({
+              query,
+              status,
+              durationMs,
+              lines: lines.length,
+              matches,
+              limitReached: lines.length >= (query === "pod" ? 1000 : 10),
+            });
+          } catch (error) {
+            log({
+              query,
+              status,
+              durationMs: Date.now() - started,
+              error: error instanceof Error ? error.name : "UnknownError",
+            });
+          }
+        }),
+      );
+      if (firstMatchMs.size < 2) {
+        await sleep(Math.max(0, Math.min(5_000, deadline - Date.now())));
+      }
+    }
+    log({ firstMatchMs: Object.fromEntries(firstMatchMs) });
+
+    if (firstMatchMs.size === 0) {
+      const loggingNs = process.env.LOKI_NAMESPACE ?? "openshift-logging";
+      const forwarder = oc(
+        "get",
+        "clusterlogforwarder",
+        "collector",
+        "-n",
+        loggingNs,
+        "-o",
+        "jsonpath={range .status.conditions[*]}{.type}={.status}:{.reason}{' '}{end}",
+      );
+      const collectors = oc(
+        "get",
+        "pods",
+        "-n",
+        loggingNs,
+        "--field-selector",
+        `spec.nodeName=${nodeName}`,
+        "-o",
+        "name",
+      )
+        .split("\n")
+        .filter((name) => name.startsWith("pod/collector-"));
+      for (const collector of collectors) {
+        const result = runOcOptional(
+          ["logs", "-n", loggingNs, collector, "--since=6m", "--tail=1000"],
+          10_000,
+        );
+        const lines = result.stdout.split("\n");
+        log({
+          collector,
+          status: result.exitCode,
+          forwarder,
+          errors: lines.filter((line) => /error/i.test(line)).length,
+          retries: lines.filter((line) => /retry|backoff/i.test(line)).length,
+          dropped: lines.filter((line) => /drop/i.test(line)).length,
+        });
+      }
+      if (!collectors.length)
+        log({ forwarder, collector: "not found on workflow node" });
+    }
+    return;
+  }
+  log({
+    namespace,
+    stdoutTimestamp: "no matching workflow stdout in current pods",
+  });
+}
+
 /**
  * Poll Loki until logs containing the workflow instance ID are ingested.
  * OpenShift log collectors typically need 30–90s after a workflow completes.
@@ -387,6 +559,7 @@ export async function configureOrchestratorLoki(): Promise<void> {
 export async function waitForLokiWorkflowLogs(
   instanceId: string,
   timeoutMs = 120_000,
+  diagnosticNamespace?: string,
 ): Promise<void> {
   const token = await resolveOpenShiftAuthToken();
   const clusterUrl = await resolveLokiUrlFromCluster();
@@ -418,6 +591,21 @@ export async function waitForLokiWorkflowLogs(
       lastError = error;
     }
     await sleep(5_000);
+  }
+
+  if (diagnosticNamespace) {
+    try {
+      await diagnoseLokiTimeout(
+        diagnosticNamespace,
+        instanceId,
+        baseUrl,
+        token,
+      );
+    } catch {
+      console.warn(
+        "[loki-timeout-diagnostics] Could not collect diagnostic data",
+      );
+    }
   }
 
   const errorMessage =
